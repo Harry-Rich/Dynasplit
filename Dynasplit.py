@@ -25,6 +25,9 @@ class BeadGroup(object):
 class Dynasplit:
     """
     Class to perform decomposition of a molecular dynamics trajectory into independent rotational and translational motion.
+
+    NVT or NVE trajectories only 
+    No triclinic cells
     """
 
     def __init__(self, u):
@@ -47,13 +50,13 @@ class Dynasplit:
         rot_traj[0] = self.first_frame
         trans_traj[0] = self.first_frame
 
-        if indices == None:
+        if indices is None:
             try:
                 indices = np.array([frag.indices for frag in self.u.atoms.fragments])
             except:
                 "Molecules not defined as fragments, update universe or define indices"
 
-        if masses == None:
+        if masses is None:
             try:
                 masses = self.u.atoms.masses
             except:
@@ -61,7 +64,7 @@ class Dynasplit:
 
         for i,ts in tqdm(enumerate(self.u.trajectory), desc="Centering molecules"):
             if slower==True: 
-                if atom_types == None:
+                if atom_types is None:
                     raise Exception('All atom types in trajectory must be specified using MDAnalysis typing')
                 Com = self.u.select_atoms(atom_types)
                 com_groups = Com.fragments 
@@ -83,33 +86,40 @@ class Dynasplit:
 
 
     def write(self,to_write= 'both', trans_file = "translation.dcd", rot_file = "rotation.dcd"):
+
+        full_dim = np.concatenate((self.dimensions, [90, 90, 90]))
         if to_write == 'both':
             u_rot = mda.Merge(self.topology_atoms)
             u_trans = mda.Merge(self.topology_atoms)
 
+            u_trans.load_new(self.trans_traj)
+            u_rot.load_new(self.rot_traj)
+
             print(f"Saving translation dcd to: {trans_file}")
-            self._dcd_writer(u_trans, trans_file,self.dimensions)
+            self._dcd_writer(u_trans, trans_file,full_dim)
 
             print(f"Saving rotation dcd to: {rot_file}")
-            self._dcd_writer(u_rot, rot_file,self.dimensions)
+            self._dcd_writer(u_rot, rot_file,full_dim)
 
 
         elif to_write == 'rotation':
             u_rot = mda.Merge(self.topology_atoms)
+            u_rot.load_new(self.rot_traj)
             print(f"Saving rotation dcd to: {rot_file}")
             _dcd_writer(u_rot, rot_file,self.dimensions)
 
         elif to_write == 'translation':
             u_trans = mda.Merge(self.topology_atoms)
+            u_trans.load_new(self.trans_traj)
             print(f"Saving translation dcd to: {trans_file}")
-            self._dcd_writer(u_trans, trans_file,self.dimensions)
+            self._dcd_writer(u_trans, trans_file,full_dim)
 
         else: 
             raise Exception("to_write must be 'both', 'translation' or 'rotation'")
 
 
     @staticmethod
-    def _dcd_writer(u, dimensions,file_name):
+    def _dcd_writer(u, file_name,dimensions):
         with mda.Writer(file_name, u.atoms.n_atoms) as writer:
             for ts in u.trajectory:
                 ts.dimensions = dimensions
