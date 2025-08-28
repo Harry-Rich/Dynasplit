@@ -26,8 +26,6 @@ class Dynasplit:
     """
     Class to perform decomposition of a molecular dynamics trajectory into independent rotational and translational motion.
 
-    NVT or NVE trajectories only
-    No triclinic cells
     """
 
     def __init__(self, u):
@@ -43,33 +41,17 @@ class Dynasplit:
         self.topology_atoms = u.atoms
 
     def calc_com(self, masses=None, indices=None, slower=False, atom_types=None):
-        indices, masses = self.ind_mass_check(indices, masses)
+        indices, masses = self._ind_mass_check(indices, masses)
+        n_groups = indices.shape[0]
+        atoms_per_group = indices.shape[1]
+        print(f"{n_groups} groups of atoms selected with {atoms_per_group} atoms each.")
         com_array = np.zeros((self.n_frames, indices.shape[0], 3))
 
         for i, ts in tqdm(enumerate(self.u.trajectory), desc="Centering molecules"):
-            if slower:
-                if atom_types is None:
-                    raise Exception(
-                        "All atom types in trajectory must be specified using MDAnalysis typing"
-                    )
-                Com = self.u.select_atoms(atom_types)
-                com_groups = Com.fragments
-                c = BeadGroup(com_groups)
-                com_pos = c.positions % self.dimensions
-
-            else:
-                frac_coords = (ts.positions % self.dimensions) / self.dimensions
-                com_pos = pseudo_com_method(
-                    frac_coords, indices, masses, self.dimensions
-                )
-
+            com_pos = self._single_frame_com(ts, masses, indices, slower, atom_types)
             com_array[i] = com_pos
 
         self._com_array = com_array
-
-    @property
-    def com_array(self):
-        return self._com_array
 
     def decompose(self, masses=None, indices=None, slower=False, atom_types=None):
         rot_traj = np.zeros((self.n_frames, self.n_atoms, 3))
@@ -78,25 +60,14 @@ class Dynasplit:
         rot_traj[0] = self.first_frame
         trans_traj[0] = self.first_frame
 
-        indices, masses = self.ind_mass_check(indices, masses)
+        indices, masses = self._ind_mass_check(indices, masses)
+        n_groups = indices.shape[0]
+        atoms_per_group = indices.shape[1]
+        com_pos_prev_frame = None
+        print(f"{n_groups} groups of atoms selected with {atoms_per_group} atoms each.")
 
         for i, ts in tqdm(enumerate(self.u.trajectory), desc="Centering molecules"):
-            com_pos_prev_frame = 0
-            if slower:
-                if atom_types is None:
-                    raise Exception(
-                        "All atom types in trajectory must be specified using MDAnalysis typing"
-                    )
-                Com = self.u.select_atoms(atom_types)
-                com_groups = Com.fragments
-                c = BeadGroup(com_groups)
-                com_pos = c.positions
-            else:
-                frac_coords = (ts.positions % self.dimensions) / self.dimensions
-                com_pos = pseudo_com_method(
-                    frac_coords, indices, masses, self.dimensions
-                )
-
+            com_pos = self._single_frame_com(ts, masses, indices, slower, atom_types)
             if i != 0:
                 com_disp = com_pos - com_pos_prev_frame
                 rot_traj[i] = self.u.trajectory[i].positions - np.repeat(
@@ -109,7 +80,25 @@ class Dynasplit:
         self.rot_traj = rot_traj
         self.trans_traj = trans_traj
 
-    def ind_mass_check(self, indices, masses):
+    def _single_frame_com(self, ts, masses, indices, slower, atom_types):
+        if slower:
+            if atom_types is None:
+                raise Exception(
+                    "All atom types in trajectory must be specified using MDAnalysis typing"
+                )
+            com = self.u.select_atoms(atom_types)
+            com_groups = com.fragments
+            c = BeadGroup(com_groups)
+            return c.positions % self.dimensions
+        else:
+            frac_coords = (ts.positions % self.dimensions) / self.dimensions
+            return pseudo_com_method(frac_coords, indices, masses, self.dimensions)
+
+    @property
+    def com_array(self):
+        return self._com_array
+
+    def _ind_mass_check(self, indices, masses):
         if indices is None:
             try:
                 indices = [frag.indices for frag in self.u.atoms.fragments]
@@ -149,7 +138,7 @@ class Dynasplit:
             u_rot = mda.Merge(self.topology_atoms)
             u_rot.load_new(self.rot_traj)
             print(f"Saving rotation dcd to: {rot_file}")
-            _dcd_writer(u_rot, rot_file, self.dimensions)
+            self._dcd_writer(u_rot, rot_file, self.dimensions)
 
         elif to_write == "translation":
             u_trans = mda.Merge(self.topology_atoms)
@@ -202,7 +191,7 @@ def pseudo_com_method(frac_coords, indices, masses, dimensions):
     frac_coords : MDAnalysis universe trajectory array
         Fractional coordinates of all atoms in the system, assumed to be of shape (n_atoms, 3).
     indices : array-like of shape (n_molecules, atoms_per_molecule)
-        List of index arrays defining each molecule in the system (1-based indices; internally converted to 0-based).
+        List of index arrays defining each molecule in the system.
     masses : array-like
         Atomic masses corresponding to the atoms in each molecule (either single array of all 3 masses, or array shape n_molecules,atom_per_mol).
     dimensions: array-like
@@ -220,8 +209,8 @@ def pseudo_com_method(frac_coords, indices, masses, dimensions):
     if (masses.shape != np.array([n_molecules, atoms_per_mol])).all():
         try:
             masses = masses.reshape(n_molecules, atoms_per_mol)
-        except:
-            raise ValueError("masses and indices shapes do not compute")
+        except Exception as e:
+            raise ValueError("masses and indices shapes do not compute") from e
 
     s_coords = frac_coords[indices]
     theta = s_coords * (2 * np.pi)
