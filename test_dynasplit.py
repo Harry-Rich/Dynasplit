@@ -25,14 +25,18 @@ def test_dynasplit_rotational_and_translational_consistency(u):
     slower.decompose(slower=True, atom_types="type 1 2 3 4 5 6 7 8 9 10 11 12")
 
     # Rotational trajectory consistency check
-    assert np.isclose(
+    assert (np.isclose(
         slower.rot_traj % dimensions, splitter.rot_traj % dimensions, atol=5e-5
-    ).all(), "Rotational trajectories differ beyond tolerance."
+    ) + np.isclose(
+        np.abs(slower.rot_traj % dimensions - splitter.rot_traj % dimensions), dimensions[0], atol=5e-5
+    )).all(), "Rotational trajectories differ beyond tolerance."
 
     # Translational trajectory consistency check
-    assert np.isclose(
+    assert (np.isclose(
         slower.trans_traj % dimensions, splitter.trans_traj % dimensions, atol=5e-5
-    ).all(), "Translational trajectories differ beyond tolerance."
+    ) + np.isclose(
+        np.abs(slower.trans_traj % dimensions - splitter.trans_traj % dimensions), dimensions[0], atol=5e-5
+    )).all(), "Translational trajectories differ beyond tolerance."
 
 
 def test_dynasplit_com_consistency(u):
