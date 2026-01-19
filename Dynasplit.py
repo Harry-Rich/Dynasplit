@@ -71,7 +71,7 @@ class Dynasplit:
             if i != 0:
                 com_disp = com_pos - com_pos_prev_frame
                 rot_traj[i] = self.u.trajectory[i].positions - np.repeat(
-                    com_disp, 12, axis=0
+                    com_disp, atoms_per_group, axis=0
                 )
                 trans_traj[i] = trans_traj[i - 1] + np.repeat(com_disp, 12, axis=0)
 
